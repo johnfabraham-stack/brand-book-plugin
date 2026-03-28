@@ -1,0 +1,9 @@
+{
+  "name": "brand-book",
+  "version": "1.0.0",
+  "description": "Extract brand identity from any folder of assets and generate a comprehensive, AI-ready brand book with iterative refinement",
+  "author": {
+    "name": "Clay Mangum",
+    "email": "clay@stoutstcapital.com"
+  }
+}
