@@ -1,20 +1,29 @@
 ---
 name: brand-book
-description: Extract brand identity from assets folder and build an AI-ready brand book
-argument-hint: <folder-path> [--refine]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion
+description: Extract brand identity from assets folder (and optionally websites) and build an AI-ready brand book with HTML guidelines, design tokens, and interactive refinement
+argument-hint: <folder-path-or-url> [--refine] [--url <website>] [--html] [--tokens] [--explore]
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion, WebFetch
 ---
 
 # Brand Book Generator
 
-You are a brand strategist and design systems expert. Your job is to analyze a folder of brand assets and produce a comprehensive, structured brand book that AI models can use to generate on-brand documents, presentations, and communications.
+You are a brand strategist, design systems expert, and visual identity analyst. Your job is to analyze brand assets from folders and/or websites and produce a comprehensive, structured brand system that both AI models and humans can use to create on-brand content.
 
-## Input
+## Input Modes
 
-- **Folder path**: `$1` — the directory containing brand assets to analyze
-- **Mode**: `$2` — pass `--refine` to enter refinement mode on an existing brand book
+- **Folder mode**: `$1` is a directory path → scan folder recursively for brand assets
+- **URL mode**: `--url <website>` → fetch and analyze a live website for colors, fonts, layout, copy
+- **Combined mode**: `$1` is a folder AND `--url <website>` → analyze both sources, cross-reference
+- **Refine mode**: `--refine` → enter refinement mode on an existing brand book in the folder
+- **HTML flag**: `--html` → also generate a styled `brand-guidelines.html` alongside the markdown
+- **Tokens flag**: `--tokens` → also export `brand-tokens.json` for design tools (Figma, Tailwind, CSS)
+- **Explore flag**: `--explore` → after the brand book, generate 3 alternative design directions
+
+If no flags are passed, default behavior is: scan folder, generate `BRAND-BOOK.md`, run confidence report, enter refinement.
 
 ## Phase 1: Asset Discovery
+
+### 1.1 Folder Scanning (if folder path provided)
 
 Scan `$1` recursively and catalog every asset by type:
 
@@ -28,176 +37,212 @@ Images:       *.png, *.jpg, *.jpeg, *.gif, *.webp, *.svg
 Config/Meta:  *.json, *.yaml, *.yml, *.xml, brand*, style*
 ```
 
-Report the inventory to the user before proceeding. If the folder is empty or doesn't exist, stop and ask for a valid path.
+If a folder has sub-folders that look like distinct brands (different company names, different logos), flag this as a **multi-brand portfolio** and track each brand's assets separately. Later, produce a unified brand book with a brand architecture section showing the hierarchy.
+
+### 1.2 Website Scanning (if --url provided)
+
+Use WebFetch to analyze the website. Extract:
+- All colors: backgrounds, text, accents, buttons, links, hover states
+- All fonts: font-family declarations, weights, sizes, line heights
+- Layout: grid patterns, max-widths, spacing, section structure
+- Navigation: menu items, structure, hierarchy
+- Hero section: headline, subhead, CTA, background treatment
+- All body copy: every headline, paragraph, tagline, CTA — section by section
+- Footer: structure, links, newsletter signup, social links
+- Meta: page title, description, OG tags
+
+Cross-reference website findings with folder findings. Flag any discrepancies (e.g., website uses different fonts than logo SVGs, website copy has different stats than deck copy).
+
+### 1.3 Incremental Mode
+
+If a `BRAND-BOOK.md` already exists in the folder:
+- Check the Evidence Log section for previously analyzed files
+- Only analyze NEW or MODIFIED files (compare against evidence log)
+- Merge new findings into the existing brand book
+- Note what changed and what was added in a "Change Log" section
+- Ask the user: "I found N new assets since the last analysis. Want me to update the brand book, or regenerate from scratch?"
+
+Report the full inventory to the user before proceeding. If the folder is empty or doesn't exist, stop and ask for a valid path.
 
 ## Phase 2: Brand Signal Extraction
 
-Analyze each asset type to extract brand signals. For each category below, pull as much evidence as possible:
+Launch parallel Agent calls to analyze different asset types simultaneously for speed. Use at least 2-3 agents for large folders.
 
 ### 2.1 Visual Identity
-- **Color palette**: Extract hex/RGB values from CSS files, SVGs, HTML, slide themes, and image analysis. Identify primary, secondary, and accent colors.
-- **Typography**: Extract font families, weights, and sizes from CSS, documents, and slides. Note heading vs body hierarchy.
-- **Logo usage**: Catalog logo variants (full, icon, monochrome, reversed). Note clear space patterns and sizing.
-- **Imagery style**: Describe the photographic/illustration style from images (e.g., "warm lifestyle photography", "flat vector illustrations", "dark tech aesthetic").
-- **Layout patterns**: Grid systems, whitespace philosophy, content density from documents and slides.
+- **Color palette**: Extract hex/RGB values from CSS files, SVGs, HTML, slide themes (via XML extraction), and image analysis. Identify primary, secondary, and accent colors. Note the dominant BACKGROUND color — this is often the most defining brand choice (e.g., parchment vs white vs dark).
+- **Typography**: Extract font families, weights, and sizes from CSS, SVG font declarations, PPTX XML, and document analysis. Note heading vs body hierarchy. Check Google Fonts links for exact weights loaded.
+- **Logo system**: Catalog logo variants by reading image files visually (PNG, JPG, PDF) and analyzing SVG structure. Note: logos may be custom wordmarks — describe the actual design (e.g., "integrated arrow in letterform") rather than assuming standard fonts. Identify light/dark variants, horizontal/vertical orientations, icon-only versions.
+- **Imagery style**: Describe the photographic/illustration style from images. Note specific patterns: hand-drawn vs vector, grayscale vs color headshots, event photography vs editorial, stock vs custom.
+- **Layout patterns**: Grid systems, whitespace philosophy, content density from documents and slides. Note the information hierarchy approach.
 
 ### 2.2 Voice & Tone
-- **Writing style**: Analyze documents for sentence length, complexity, formality level (Flesch-Kincaid estimate).
+- **Writing style**: Analyze documents for sentence length, complexity, formality level.
 - **Vocabulary patterns**: Industry jargon frequency, branded terms, avoided words.
 - **Tone markers**: Professional/casual, authoritative/approachable, technical/accessible.
 - **Point of view**: First person plural ("we"), second person ("you"), third person, passive voice frequency.
 - **CTAs and headings**: Common patterns in calls-to-action, section headers, email subject lines.
+- **Opening and closing lines**: How documents begin and end — this reveals tone more than anything.
+- **Recurring phrases**: Catalog phrases that appear in 3+ documents — these are the brand's verbal DNA.
 
 ### 2.3 Messaging Architecture
 - **Value propositions**: Core claims repeated across materials.
 - **Taglines/slogans**: Any repeated branded phrases.
-- **Positioning statements**: How the brand differentiates from competitors (if visible).
+- **Positioning statements**: How the brand differentiates from competitors.
 - **Audience signals**: Who the materials address (enterprise, consumer, developer, etc.).
 - **Key narratives**: Recurring stories, case studies, or proof points.
+- **Credibility stats**: Numbers used repeatedly (e.g., "10,000+ customers", "95 investments").
+- **Elevator pitches**: Any concise company descriptions found — catalog by length (1-line, 1-paragraph, full).
 
 ### 2.4 Document Patterns
-- **Structure templates**: Common document outlines (e.g., proposals always start with executive summary).
-- **Header/footer patterns**: What appears in headers and footers consistently.
-- **Naming conventions**: How files, sections, and products are named.
+- **Structure templates**: Common document outlines (proposals, LOIs, articles, emails).
+- **Header/footer patterns**: What appears consistently.
+- **Naming conventions**: How files, sections, products, and entities are named.
 - **Data presentation**: How numbers, charts, and tables are formatted.
+- **Team bios**: Extract any bio language found, noting different lengths and contexts.
 
 ## Phase 3: Brand Book Assembly
 
-Write the brand book to `$1/BRAND-BOOK.md` with this structure:
+Write the brand book to `$1/BRAND-BOOK.md` with this expanded structure:
 
 ```markdown
 # [Brand Name] Brand Book
 > AI-Ready Brand Identity Guide
-> Generated: [date] | Source: [folder path]
-> Assets analyzed: [count]
+> Generated: [date] | Source: [folder path + URL if applicable]
+> Assets analyzed: [count] | Design System: [name if chosen]
 
 ## Quick Reference
-<!-- One-page cheat sheet an AI model reads first -->
-
-### Colors
-| Role | Hex | RGB | Usage |
-|------|-----|-----|-------|
-| Primary | #XXXXXX | rgb(X,X,X) | Headlines, CTAs, primary buttons |
-| Secondary | ... | ... | ... |
-| Accent | ... | ... | ... |
-| Neutral/Dark | ... | ... | Body text, backgrounds |
-| Neutral/Light | ... | ... | Backgrounds, borders |
-
-### Typography
-| Level | Font | Weight | Size | Usage |
-|-------|------|--------|------|-------|
-| H1 | ... | ... | ... | Page titles |
-| H2 | ... | ... | ... | Section headers |
-| Body | ... | ... | ... | Paragraphs |
-| Caption | ... | ... | ... | Labels, metadata |
-
-### Voice Snapshot
-- **Tone**: [2-3 adjectives]
-- **POV**: [first/second/third person]
-- **Formality**: [score 1-10, with description]
-- **Sentence style**: [short punchy / long flowing / mixed]
-
----
+[One-page cheat sheet: colors, fonts, voice, key stats]
 
 ## 1. Visual Identity
-
-### 1.1 Color System
-[Full color palette with context, do/don't examples]
-
-### 1.2 Typography System
-[Font stack, hierarchy, fallbacks, line heights, letter spacing]
-
-### 1.3 Logo Guidelines
-[Variants discovered, usage notes, spacing rules if detectable]
-
-### 1.4 Imagery & Iconography
-[Style description, mood, subjects, treatments]
-
-### 1.5 Layout & Spacing
-[Grid patterns, margins, content density, alignment preferences]
-
----
+### 1.1 Color System [with per-brand rules if multi-brand]
+### 1.2 Typography System [heading + body fonts, full scale]
+### 1.3 Logo System [variants, usage rules, do/don't]
+### 1.4 Imagery & Illustration [style per brand context]
+### 1.5 Layout & Spacing [patterns, whitespace philosophy]
 
 ## 2. Voice & Tone
-
-### 2.1 Brand Voice
-[Core voice attributes with examples pulled from actual documents]
-
-### 2.2 Tone Variations
-[How tone shifts across contexts: formal reports vs sales vs internal]
-
-### 2.3 Writing Rules
-[Specific do/don't rules derived from patterns]
-- DO: [pattern observed]
-- DON'T: [anti-pattern or absence observed]
-
-### 2.4 Vocabulary
-[Preferred terms, branded language, terms to avoid]
-
----
+### 2.1 Brand Voice [core attributes with real examples]
+### 2.2 Tone Variations [by context: outreach, editorial, institutional]
+### 2.3 Writing Rules [do/don't from real patterns]
+### 2.4 Vocabulary [preferred terms, branded language, avoid list]
 
 ## 3. Messaging Framework
+### 3.1 Core Value Propositions [per entity if multi-brand]
+### 3.2 Audience Profiles [who, what they care about, how to speak to them]
+### 3.3 Key Messages [with usage context]
+### 3.4 Taglines & Branded Phrases [with frequency data]
 
-### 3.1 Core Value Proposition
-[Primary and supporting value props]
+## 4. Brand Foundation
+### 4.1 Origin Story [synthesized from documents]
+### 4.2 Mission & Vision [extracted or synthesized]
+### 4.3 Core Values [derived from evidence]
+### 4.4 Brand Personality [archetype, traits]
 
-### 3.2 Audience Profiles
-[Who the brand speaks to, based on document analysis]
+## 5. Boilerplate Copy Library
+### 5.1 About Us [short / medium / long per entity]
+### 5.2 Press Release Boilerplate
+### 5.3 Team Bios [per team member, multiple lengths]
+### 5.4 Elevator Pitches [30s / 60s per entity]
 
-### 3.3 Key Messages
-[Recurring themes and proof points]
+## 6. Real Brand Voice Examples
+### 6.1 Gold Standard Paragraphs [best on-brand writing from actual docs]
+### 6.2 Opening Lines by Context [how docs begin per audience]
+### 6.3 Closing Lines by Context [how docs end per audience]
+### 6.4 Recurring Phrases [frequency + usage context]
 
-### 3.4 Taglines & Branded Phrases
-[Any discovered slogans or repeated branded language]
+## 7. Tone Calibration
+### 7.1 Off-Brand vs On-Brand [3-5 comparison pairs]
+### 7.2 Tone Gradient [same message in 3-5 registers]
 
----
+## 8. Document Templates
+### 8.1 [Type 1] Structure [e.g., proposal, article, email]
+### 8.2 [Type 2] Structure
+### 8.3 [Type N] Structure
 
-## 4. Document Templates
+## 9. Content Decision Tree
+[IF audience = X AND context = Y → tone = Z, color = W]
 
-### 4.1 Proposal/Report Structure
-[Common outline pattern]
+## 10. AI Prompt Instructions
+### Style Instructions [consolidated rules for AI]
+### Color Application [per-brand color logic]
+### Typography Application [heading/body/label rules]
+### Voice Calibration [parameter dials: warmth, formality, etc.]
 
-### 4.2 Presentation Structure
-[Slide deck patterns]
+## 11. Brand Architecture [if multi-brand]
+### Hierarchy [tree diagram]
+### Relationship Table [when to use which brand]
+### Color Logic by Brand
 
-### 4.3 Email/Communication Patterns
-[If discoverable from assets]
+## 12. Confidence Assessment
+[Per-section ratings with evidence counts]
 
-### 4.4 Naming Conventions
-[File naming, product naming, section naming patterns]
-
----
-
-## 5. AI Prompt Instructions
-
-<!-- This section is specifically for AI models consuming this brand book -->
-
-When creating content for [Brand Name], follow these rules:
-
-### Style Instructions
-[Consolidated, actionable rules an AI can follow directly]
-
-### Color Application
-[When to use which color]
-
-### Typography Application
-[When to use which font/weight/size]
-
-### Voice Calibration
-[Specific prompt-ready instructions for matching brand voice]
-
-### Template: [Document Type]
-[Reusable structure for common document types]
-
----
-
-## 6. Evidence Log
-[List of assets analyzed with what was extracted from each — for auditability]
+## 13. Evidence Log
+[Full audit trail: file → what was extracted]
 ```
 
-## Phase 4: Confidence & Gaps Report
+## Phase 4: HTML Guidelines Generation (if --html or user requests)
 
-After generating the brand book, present a confidence assessment:
+Generate a styled `brand-guidelines.html` that:
+- Uses the brand's actual fonts (loaded from Google Fonts or system fonts)
+- Uses the brand's actual color palette for backgrounds, accents, and text
+- Includes color swatches with hex values and usage descriptions
+- Shows typography specimens with the real fonts at real sizes
+- Displays logo representations (text approximations with correct fonts/colors)
+- Has a sticky navigation bar for jumping between sections
+- Includes do/don't cards, tone comparison cards, stat grids
+- Contains ready-to-use copy blocks, elevator pitch cards
+- Has a quick reference card at the end
+- Is responsive (works on mobile) and print-ready
+- Is self-contained (single HTML file, no external dependencies except Google Fonts)
+
+Match the visual design of the HTML to the brand being documented. If the brand uses parchment backgrounds and serif headings, the HTML should too. The guidelines page IS a brand artifact.
+
+## Phase 5: Design Token Export (if --tokens or user requests)
+
+Generate a `brand-tokens.json` file compatible with design tools:
+
+```json
+{
+  "brand": "[Brand Name]",
+  "version": "1.0",
+  "generated": "[date]",
+  "colors": {
+    "primary": { "hex": "#XXXXXX", "rgb": "X, X, X", "usage": "..." },
+    "secondary": { "hex": "#XXXXXX", "rgb": "X, X, X", "usage": "..." },
+    "accent": { "hex": "#XXXXXX", "rgb": "X, X, X", "usage": "..." },
+    "background": { "hex": "#XXXXXX", "rgb": "X, X, X", "usage": "..." },
+    "text": { "hex": "#XXXXXX", "rgb": "X, X, X", "usage": "..." }
+  },
+  "typography": {
+    "heading": { "family": "...", "weights": [...], "fallback": "..." },
+    "body": { "family": "...", "weights": [...], "fallback": "..." },
+    "scale": {
+      "h1": { "size": "...", "weight": "...", "lineHeight": "..." },
+      "h2": { "size": "...", "weight": "...", "lineHeight": "..." },
+      "body": { "size": "...", "weight": "...", "lineHeight": "..." },
+      "caption": { "size": "...", "weight": "...", "lineHeight": "..." }
+    }
+  },
+  "spacing": {
+    "section": "...",
+    "paragraph": "...",
+    "element": "..."
+  },
+  "tailwind": {
+    "extend": {
+      "colors": { ... },
+      "fontFamily": { ... }
+    }
+  },
+  "css_variables": "..."
+}
+```
+
+Also generate a `tailwind.brand.config.js` snippet if the brand would benefit from it.
+
+## Phase 6: Confidence & Gaps Report
+
+Present a confidence assessment after generating the brand book:
 
 | Section | Confidence | Evidence Count | Notes |
 |---------|------------|----------------|-------|
@@ -206,9 +251,9 @@ After generating the brand book, present a confidence assessment:
 | Voice | High/Med/Low | N assets | ... |
 | Messaging | High/Med/Low | N assets | ... |
 
-Flag any sections where you had to infer or guess, and suggest what additional assets would strengthen those sections.
+Flag any sections where inference was required. Suggest specific assets that would strengthen weak sections.
 
-## Phase 5: Aspirational Refinement (Interactive)
+## Phase 7: Aspirational Refinement (Interactive)
 
 After presenting the brand book and confidence report, OR if `--refine` was passed, enter refinement mode.
 
@@ -217,31 +262,46 @@ Use AskUserQuestion to guide the user through iterative improvements:
 ### Round 1: Aspirational Anchors
 Ask: "Are there any public brands whose identity you admire or want to channel? For example: 'I want the clean minimalism of Apple with the warmth of Mailchimp.' This helps me calibrate the brand book toward your aspirations."
 
-If the user names brands, research what makes those brands distinctive and adjust the brand book:
-- Shift color temperature/saturation toward the reference
-- Adjust voice formality/playfulness to match
-- Adopt layout density and whitespace philosophy
-- Note the inspiration explicitly in the brand book
+If the user names brands, research what makes those brands distinctive and adjust the brand book accordingly.
 
 ### Round 2: Gap Filling
-For each low-confidence section, ask a targeted question:
-- "I couldn't detect a consistent color palette. What are your primary brand colors, or what mood should they convey?"
-- "Your documents use mixed fonts. Is there a preferred font family?"
-- "Your tone ranges from very formal to casual. Which end of the spectrum is the true brand voice?"
+For each low-confidence section, ask a targeted question.
 
 ### Round 3: Differentiation
 Ask: "What should make your brand instantly recognizable? What's the one thing that should feel different from competitors?"
 
-### Round 4: Satisfaction Check
+### Round 4: Multi-Brand Hierarchy (if applicable)
+If the portfolio has multiple brands, ask:
+- "What's the relationship between these brands? Parent/child? Independent? Shared identity?"
+- "Which brand is the 'parent' that sets the tone?"
+- "Should they look like a family, or intentionally distinct?"
+
+### Round 5: Satisfaction Check
 Ask: "Review the updated brand book. What feels off or missing? We can keep refining, or if it looks good, I'll finalize it."
 
 Repeat rounds as needed until the user is satisfied.
 
-## Important Notes
+## Phase 8: Design Direction Exploration (if --explore or user requests)
+
+Generate 3 alternative design directions for the brand portfolio. For each direction:
+- A name and philosophy statement
+- A unified color palette (shown as a strip)
+- Typography pairing (heading + body)
+- How each sub-brand would look in this system (preview descriptions)
+- Pros and cons
+- Best-for statement (what audience/priority this path optimizes for)
+
+Present as a comparison table at the end so the user can choose. If the user picks a direction, update the brand book to reflect it.
+
+## Implementation Notes
 
 - When reading images (PNG, JPG, SVG), use the Read tool which supports visual file inspection.
-- For PDFs, use the Read tool with page ranges for large files.
-- For PPTX/DOCX, use Bash to extract XML content (`unzip -p file.pptx ppt/slides/*.xml`).
+- For PDFs, use the Read tool with page ranges for large files (max 20 pages per read).
+- For PPTX/DOCX, use Bash to extract XML content (`unzip -p file.pptx ppt/slides/*.xml 2>/dev/null | sed 's/<[^>]*>//g' | tr -s ' \n'`).
 - Extract CSS color values with Grep for hex codes (`#[0-9a-fA-F]{3,8}`) and rgb/hsl patterns.
+- For website analysis, use WebFetch to pull page content and extract design details.
+- Use parallel Agent calls for large folders — split work across visual analysis, document analysis, and web analysis.
 - Always show the user what you found before writing the brand book — let them correct misidentifications.
 - The brand book should be self-contained — an AI model reading only BRAND-BOOK.md should have everything needed to create on-brand content.
+- The HTML guidelines should visually embody the brand — use the brand's own fonts, colors, and aesthetic, not a generic template.
+- When generating design tokens, include both raw values and framework-specific formats (Tailwind, CSS custom properties).
